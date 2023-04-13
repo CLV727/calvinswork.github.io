@@ -1,0 +1,331 @@
+---
+title: "NEW_IAEM_2"
+output:
+  pdf_document: default
+  html_document: default
+date: '2022-08-10'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+rm(list = ls())
+```
+```{r}
+library(dplyr)
+library(stringr)
+library(readr)
+library(tidyverse)
+library(psych)
+library(janitor)
+library(tidyr)
+library(rstanarm)
+```
+```{r}
+setwd("/Users/calvinzhang/Desktop/IAEM project")
+
+data2 <- read.csv("numeric.csv")
+```
+```{r}
+new_data <- data2[-c(1:6,8:17)]
+new_datafram <- data.frame(new_data)
+```
+```{r}
+# filter people answered 1 or 2 and 4 or 5 
+group1.index <- which(str_detect(new_datafram$Q2, "1|2")) 
+group2.index <- which(str_detect(new_datafram$Q2, "4|5")) 
+```
+```{r}
+# filter people answered 1 or 2, also contain 4 or 5. 
+inter <- intersect(group1.index, group2.index) 
+```
+```{r}
+# remove people answered 4 or 5 in people answered 1 or 2
+group1.ind <- group1.index[-which( group1.index %in%  inter)] 
+# remove people answered 1 or 2 in people answered 4 or 5
+group2.ind <- group2.index[-which( group2.index %in%  inter)] 
+# filter people only answered 3
+which(new_datafram$Q2 =='3') 
+```
+```{r}
+# create new columns with group #s
+new_datafram$group <- NA
+new_datafram$group[c(group1.ind, which(new_datafram$Q2 =='3'))] <- "group1"  
+new_datafram$group[group2.ind] <- "group2" 
+new_datafram$group[inter] <- "group3"
+```
+```{r}
+# reorder the Q4-13 answers 
+x <-c()
+for(i in 5:14){
+  x <- new_datafram[,i]
+  ind1<- which(x=='1')
+  ind2<- which(x=='5')
+  ind3<- which(x=='2')
+  ind4<- which(x=='4')
+  x[ind1] <- '5'
+  x[ind2] <- '1'
+  x[ind3] <- '4'
+  x[ind4] <- '2'
+  new_datafram[,i] <- x
+}
+new_num <- na.omit(new_datafram)
+```
+```{r}
+# create new column with sum 
+numeric_sum <- apply(new_num[,5:14], 2, as.numeric)
+sum <- c()
+for (j in 1:nrow(numeric_sum)) {
+  sum[j] = sum(numeric_sum[j,],na.rm = T)
+}
+new_num$sum <- sum
+final_num <- new_num[-which(new_num$sum==0),]
+df <- cbind(ID = 1:nrow(final_num), final_num)
+df$group <- gsub("group3", "group1", df$group)
+df
+write.csv(df,"final_numeric.csv")
+```
+```{r}
+# histogram for number of people vs. sum of scores
+h <- hist(df$sum,
+     main = "Sum of question 4-13 scores",
+     xlab = "Sum of scores",
+     ylab = "Number of people",
+     xlim = c(0,60),
+     ylim = c(0,100),
+     col = "darkmagenta", breaks = 12)
+text(h$mids,h$counts,labels=h$counts, adj=c(0.5, -0.5))
+```
+```{r}
+# details about dataset df (cleaned)
+summary(df)
+data_matrix <- data.matrix(df)
+scale(data_matrix, center = T, scale = T)
+```
+#select group 1 and group 2 based on the sum using pivot wider
+```{r}
+df2 <- df %>%
+  select(ID,group,sum)
+num_group <- df2 %>%
+  pivot_wider(names_from = group, values_from = sum)
+```
+#details about dataset "num_group"
+```{r}
+summary(num_group)
+scale(num_group, center = T, scale = T)
+```
+#check different groups means, median, range etc. 
+```{r}
+describe(num_group)
+```
+#Calculating alpha values
+```{r}
+df_alpha <- df %>%
+  dplyr::select(ID, Q4_1, Q5_1, Q6_1, Q7_1, Q8_1, Q9_1, Q10_1, Q11_1, Q12_1, Q13_1)
+df_alpha <- lapply(df_alpha,as.numeric)
+
+df_alpha <- as.data.frame(df_alpha)
+dim(df_alpha)
+cro_alpha <- psych::alpha(df_alpha[,2:11], na.rm = TRUE, check.keys=TRUE)
+
+cro_alpha
+#kendalls taw: non-parametric correlation test
+hist(df_alpha$Q8_1)
+describe(num_group)
+#mean scale for each question
+#look at mean scales by age (are younger people or older people getting good scores), gender (are women or men getting good scores?) by race (white vs. nonwhite)???
+describe(new_num)
+```
+```{r}
+df3 <- lapply(new_num, as.numeric)
+table(df3$Q16)
+```
+#recode Q16 race variable to white and non-white and compare group1 and group2 by race
+```{r}
+#0: non-white
+#1: white
+df4 <- df %>%
+    mutate(Q16 = recode(Q16, "1" = "0",
+                             "2" = "0",
+                             "3" = "0",
+                             "4" = "0",
+                             "5" = "1",
+                             "6" = "0",
+                             "7" = "NA"))
+df4 <- df4 %>%
+  select(ID,Q16,group,sum)
+df4$Q16 <- as.factor(df4$Q16)
+df4$Q16[df4$ID == 71] = "NA"
+
+
+df4 <- filter(df4, ID != 13 & ID != 18 & ID != 47 & ID != 49 & ID != 56 & ID != 71 & ID != 88 & ID != 135)
+fit_race <- lm(sum ~ group + Q16, data = df4)
+summary(fit_race)
+
+mean_race_list <- tapply(df4$sum, df4$Q16, mean,
+                         simplify = FALSE)
+mean_race_list
+
+df4 %>%
+  group_by(Q16) %>%
+  summarise(
+    count = n(),
+    mean = mean(sum),
+    median = median(sum)
+  )
+
+#1 dependent variable: sum; #2 independent variables: group and race
+
+#post1 <- stan_glm(sum ~ group + Q16, data = df4, 
+                  #family = gaussian(link = "identity"), 
+                  #seed = 12345)
+#summary(post1)
+
+#08.23.22 Data Services
+df4 <- df4 %>%
+  rowwise() %>%
+  mutate(group_Q16 = paste(as.character(group), as.character(Q16)))
+
+#using group1 1 (group 1 white as the reference)
+#Linear Regression
+df4$group_Q16 <- factor(df4$group_Q16,levels = c("group1 1","group1 0", "group2 0", "group2 1"))
+lm_race <- lm(sum ~ group_Q16, data=df4)
+summary(lm_race)
+
+#Anova test
+aov_race <- aov(sum ~ group_Q16, data=df4)
+summary(aov_race)
+coefficients(aov_race)
+#pvalue: 0.197 show that there is no significant difference among these four groups. 
+
+#Creating graph 
+ggplot(data = df4,
+       aes(x = group_Q16, y = sum))+
+  geom_boxplot()
+
+```
+#compare group1 and group2 by gender
+```{r}
+df5 <- df %>%
+  select(ID,Q15,group,sum)
+df5$Q15 <- as.factor(df5$Q15)
+df5$Q15[df5$ID == 71] = "5"
+df5 <- filter(df5, ID != 13 & ID != 71 & ID != 47 & ID != 49 & ID != 88)
+#aggregate(sum ~ Q15 + group, df5, mean, exclude = NULL)
+
+
+mean_sex_list <- tapply(df5$sum, df5$Q15, mean,
+                        simplify = FALSE)
+mean_sex_list
+
+df5 %>%
+  group_by(Q15) %>%
+  summarise(
+    count = n(),
+    mean = mean(sum),
+    median = median(sum)
+  )
+
+df5 <- df5 %>%
+  rowwise() %>%
+  mutate(group_Q15 = paste(as.character(group), as.character(Q15)))
+
+#Linear Regression, using group1 1 (group1 Male) as reference
+lm_gender<- lm(sum ~ group_Q15, data=df5)
+summary(lm_gender)
+
+#Creating graph
+ggplot(data = df5,
+       aes(x = group_Q15, y = sum))+
+  geom_boxplot()
+```
+
+#compare group1 and group2 by age
+```{r}
+df6 <- df %>%
+    select(ID, Q14, group, sum)
+df6$Q14[df6$ID == 71] = "5"
+df6$Q14 <- as.factor(df6$Q14)
+
+df6 <- filter(df6, ID != 51 & ID != 71 & ID != 47 & ID != 49 & ID != 88)
+
+df6 <- df6 %>%
+  rowwise() %>%
+  mutate(group_Q14 = paste(as.character(group), as.character(Q14)))
+
+#Linear Regression, using group1 1 (group1 19-35) as reference 
+fit_age <- lm(sum ~ group_Q14, data=df6)
+summary(fit_age)
+
+#Creating graph
+ggplot(data = df6,
+       aes(x = group_Q14, y = sum))+
+  geom_boxplot()
+
+df6 %>%
+  group_by(group) %>%
+  summarise(
+    count = n(),
+    mean = mean(sum),
+    median = median(sum)
+  )
+```
+#Comparing group1 and group2 by Hispanic race
+```{r}
+#recode non-hispanic to 0 and hispanic to 1 
+df7 <- df %>%
+    select(ID, Q17, group, sum)
+df7$Q17[df7$ID == 71] = "NA"
+df7$Q17[df7$Q17 == 3] = "NA"
+df7$Q17[df7$Q17 == 1] = "1"
+df7$Q17[df7$Q17 == 2] = "0"
+df7$Q17 <- as.factor(df7$Q17)
+
+df7 <- filter(df7, ID != 13  & ID != 47 & ID != 49 & ID != 71 & ID != 88)
+
+df7 <- df7 %>%
+  rowwise() %>%
+  mutate(group_Q17 = paste(as.character(group), as.character(Q17)))
+
+#Linear Linear Regression, using group1 1 (group 1 Hispanic as reference)
+df7$group_Q17 <- factor(df7$group_Q17,levels = c("group1 1","group1 0", "group2 0", "group2 1"))
+fit_hispanic <- lm(sum ~ group_Q17, data = df7)
+summary(fit_hispanic)
+
+mean_hispanic_list <- tapply(df7$sum, df7$Q17, mean,
+                             simplify = FALSE)
+mean_hispanic_list
+
+df7 %>%
+  group_by(Q17) %>%
+  summarise(
+    count = n(),
+    mean = mean(sum),
+    median = median(sum)
+  )
+
+#Creating graph
+ggplot(data = df7,
+       aes(x = group_Q17, y = sum))+
+  geom_boxplot()
+```
+
+#Comparing means between group 1 and group 2 using Wilcoxon Test
+```{r}
+#group 1 is normally distributed
+#group 2 is not normally distributed
+shapiro.test(num_group$group1)
+shapiro.test(num_group$group2)
+
+
+shapiro.test(log(num_group$group2))
+wilcoxtest <- wilcox.test(num_group$group1, num_group$group2, alternative = "two.sided", mu=0, paired= FALSE)
+wilcoxtest
+```
+
+#Comparing means between group 1 and group 2 using t test
+```{r}
+ttest <- t.test(num_group$group1, num_group$group2, alternative = "two.sided", mu = 0, paired= FALSE)
+ttest
+```

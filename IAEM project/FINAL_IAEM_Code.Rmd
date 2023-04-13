@@ -1,0 +1,86 @@
+---
+title: "IAEM_CODE_Dingwen_Miao"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+date: '2022-07-20'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+rm(list = ls())
+```
+#library & uploading dataset
+```{r}
+library(dplyr)
+library(stringr)
+library(readr)
+#setwd("/Users/calvinzhang/Desktop/IAEM project")
+#data2 <- read.csv("numeric.csv")
+data2 <- read_csv("D:/NYU IAEM PROJECT- DR.GERSHON/Numeric_dataset.csv")
+```
+#data cleaning & arrangement
+```{r}
+new_data <- data2[-c(1:6,8:17)]
+new_datafram <- data.frame(new_data)
+
+group1.index <- which(str_detect(new_datafram$Q2, "1|2|3"))
+group2.index <- which(str_detect(new_datafram$Q2, "4|5"))
+inter <- intersect(group1.index, group2.index)
+drop.index <-c( grep("^6$",new_datafram$Q2),  grep("^7$",new_datafram$Q2))
+
+group1<-  group1.index[-which( group1.index %in% inter)]
+group2<-  group2.index[-which( group2.index %in% inter)]
+```
+```{r}
+new_datafram$group <- NA
+new_datafram$group[group1] <- "group1"  
+new_datafram$group[2] <- NA
+new_datafram$group[group2] <- "group2" 
+new_datafram$group[inter] <- "group1 & group2"
+new_datafram$group[drop.index] 
+```
+#regroup #Q4-Q13
+```{r}
+x <-c()
+for(i in 5:14){
+  x <- new_datafram[,i]
+  ind1<- which(x=='1')
+  ind2<- which(x=='5')
+  ind3<- which(x=='2')
+  ind4<- which(x=='4')
+  x[ind1] <- '5'
+  x[ind2] <- '1'
+  x[ind3] <- '4'
+  x[ind4] <- '2'
+  new_datafram[,i] <- x
+}
+```
+#Adding scores from #Q4-Q13
+```{r}
+new_num <- na.omit(new_datafram)
+
+numeric_sum <- apply(new_num[,5:14], 2, as.numeric)
+sum <- c()
+for (j in 1:nrow(numeric_sum)) {
+  sum[j] = sum(numeric_sum[j,],na.rm = T)
+}
+new_num$sum <- sum
+```
+#Creating visual plot
+```{r}
+write.csv(new_num,"new_numeric.csv")
+
+h <- hist(new_num$sum,
+     main = "Sum of question 4-13 scores",
+     xlab = "Sum of scores",
+     ylab = "Number of people",
+     xlim = c(0,60),
+     ylim = c(0,100),
+     col = "darkmagenta", breaks = 12)
+text(h$mids,h$counts,labels=h$counts, adj=c(0.5, -0.5))
+```
